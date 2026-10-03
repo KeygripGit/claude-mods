@@ -1,0 +1,10 @@
+{
+  "name": "workorder-pane",
+  "version": "0.3.0",
+  "description": "Keygrip work orders in a pane: /workorders lists your project's deploy queue; pick one to read its fields, edits, schema and verify steps, and see the page before and after the edits. Paste your project's client key once.",
+  "author": {
+    "name": "Keygrip"
+  },
+  "homepage": "https://app.keygrip.ai/mods/",
+  "types": "./types/index.d.ts"
+}
