@@ -1,7 +1,11 @@
 {
   "name": "keygrip",
-  "owner": { "name": "Keygrip" },
-  "metadata": { "description": "Claude Code mods for Keygrip clients" },
+  "owner": {
+    "name": "Keygrip"
+  },
+  "metadata": {
+    "description": "Claude Code mods for Keygrip clients"
+  },
   "plugins": [
     {
       "name": "workorder-pane",
