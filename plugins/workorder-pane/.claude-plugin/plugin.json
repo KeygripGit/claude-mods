@@ -1,6 +1,6 @@
 {
   "name": "workorder-pane",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Keygrip work orders in a pane: /workorders lists your project's deploy queue; pick one to read its fields, edits, schema and verify steps, and see the page before and after the edits \u2014 a page that is not live yet is shown on a template page of your site. Paste your project's client key once.",
   "author": {
     "name": "Keygrip"

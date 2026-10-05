@@ -316,22 +316,51 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           <Text bold>{rows.length} work orders · {ready} ready · {rows.length - ready} blocked{superseded ? ' · superseded included' : ''}</Text>
-          <Box flexDirection="column">
-            <Text dimColor>{'id    ver  mode      state       keyword'}</Text>
-            {rows.map(r => {
-              const flag = r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : 'ready'
-              const label = `#${String(r.id).padEnd(4)} v${String(r.version).padEnd(3)} ${r.mode.padEnd(9)} ${flag.padEnd(11)} ${r.keyword}`
-              return (
-                <Button
-                  key={`row-${r.id}`}
-                  plain
-                  dimColor={r.blocked}
-                  label={label.length > width ? label.slice(0, width - 1) + '…' : label}
-                  onPress={open(r)}
-                />
-              )
-            })}
-          </Box>
+          {surface === 'terminal' ? (
+            // Monospace: one padded line per row is the table.
+            <Box flexDirection="column">
+              <Text dimColor>{'id    ver  mode      state       keyword'}</Text>
+              {rows.map(r => {
+                const flag = r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : 'ready'
+                const label = `#${String(r.id).padEnd(4)} v${String(r.version).padEnd(3)} ${r.mode.padEnd(9)} ${flag.padEnd(11)} ${r.keyword}`
+                return (
+                  <Button
+                    key={`row-${r.id}`}
+                    plain
+                    dimColor={r.blocked}
+                    label={label.length > width ? label.slice(0, width - 1) + '…' : label}
+                    onPress={open(r)}
+                  />
+                )
+              })}
+            </Box>
+          ) : (
+            // Proportional type: padding does not line up, so the columns are Boxes of a
+            // fixed share of the width; the keyword is the button that opens the order.
+            <Box flexDirection="column">
+              <Box flexDirection="row" gap={1}>
+                <Box width="9%"><Text dimColor bold>id</Text></Box>
+                <Box width="7%"><Text dimColor bold>ver</Text></Box>
+                <Box width="13%"><Text dimColor bold>mode</Text></Box>
+                <Box width="16%"><Text dimColor bold>state</Text></Box>
+                <Box flexGrow={1}><Text dimColor bold>keyword</Text></Box>
+              </Box>
+              {rows.map(r => {
+                const flag = r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : 'ready'
+                return (
+                  <Box key={`qrow-${r.id}`} flexDirection="row" gap={1} alignItems="center">
+                    <Box width="9%"><Text dimColor={r.blocked}>#{r.id}</Text></Box>
+                    <Box width="7%"><Text dimColor={r.blocked}>v{r.version}</Text></Box>
+                    <Box width="13%"><Text dimColor={r.blocked}>{r.mode === 'net_new' ? 'net new' : r.mode}</Text></Box>
+                    <Box width="16%"><Text color={r.blocked ? 'red' : r.deployed_at ? 'green' : undefined} dimColor={r.blocked}>{flag}</Text></Box>
+                    <Box flexGrow={1}>
+                      <Button key={`row-${r.id}`} plain dimColor={r.blocked} label={r.keyword} onPress={open(r)} />
+                    </Box>
+                  </Box>
+                )
+              })}
+            </Box>
+          )}
           <Box gap={1}>
             <Button hotkey="r" onPress={() => { queue = null; void loadQueue($, superseded) }}>Refresh</Button>
             <Button key="change-key" hotkey="k" onPress={() => update($, keyPrompt, () => true)}>Key</Button>
