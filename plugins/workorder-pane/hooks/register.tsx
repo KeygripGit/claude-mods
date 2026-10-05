@@ -72,8 +72,14 @@ const orders = new Map<number, Loaded<WorkOrder>>()
 type Shot = { data: string; mime: string; meta: PreviewMeta }
 type PreviewMeta = { mode: string; url: string; width: number; height: number; slice_height: number; slices: number
   truncated: boolean; elapsed_ms: number; applied: { id: string; kind: string; status: string; note?: string }[]
-  applied_count: number; not_found: string[]; view_url?: string; slice: number }
+  applied_count: number; not_found: string[]; view_url?: string; slice: number
+  // A page that is not live yet renders on a template page of the same site: `url` is the
+  // template loaded, `template_url` names it and `page_url` is the work order's own.
+  page_url?: string; template_url?: string }
 const shots = new Map<string, Loaded<Shot>>()
+// The template a net-new order is previewed on, per order, once the reader typed one; unset
+// means the server picks the inventory page nearest the new URL's path.
+const templates = new Map<number, string>()
 const shotKey = (id: number, mode: string, at: number, variant: string) => `${id}:${mode}:${at}:${variant}`
 const inflight = new Set<string>()
 
@@ -159,6 +165,8 @@ async function loadShot($: EngineInterface, id: number, mode: string, at: number
   await update($, tick, n => (n ?? 0) + 1)
   try {
     const args: Record<string, unknown> = { optimization_id: id, mode, slice: at, refresh }
+    const template = templates.get(id)
+    if (template) args.template_url = template
     // The engine re-encodes an image block over its own byte limit to JPEG before a plugin
     // sees it, and the terminal's Image takes PNG only: ask the server to keep the PNG under
     // that limit (palette, then scale). The desktop's Svg takes any picture under ~128 KB.
@@ -464,6 +472,28 @@ export const register: Register = on => {
             <Button hotkey="r" onPress={() => { for (const k of [...shots.keys()]) if (k.startsWith(`${id}:`)) shots.delete(k); void loadShot($, id, pmode, at, variant, true) }}>Re-render</Button>
           </Box>
         )
+        // A page that is not live yet is previewed on a template: a live page of the same
+        // site, its article swapped for this work order's. The server picks the nearest
+        // inventory page unless one is typed here; a new template drops the cached shots.
+        const shownTemplate = shot?.ok ? shot.data.meta.template_url : undefined
+        const notLive = (row ? row.mode !== 'existing' : wo.mode !== 'existing') || Boolean(shownTemplate)
+        const templateRow = notLive && (
+          <Box flexDirection="column">
+            <Text dimColor>Not live yet — shown on a template page of the site{shownTemplate ? `: ${shownTemplate}` : templates.get(id) ? `: ${templates.get(id)}` : ' (the nearest page in the inventory)'}. Type another live URL on the site to use its layout instead:</Text>
+            <Input
+              key="template-url"
+              label="Template URL"
+              placeholder={shownTemplate ?? 'https://…/a-live-page-on-the-site'}
+              submitLabel="Use as template"
+              onSubmit={value => {
+                const url = value.trim()
+                if (url) templates.set(id, url); else templates.delete(id)
+                for (const k of [...shots.keys()]) if (k.startsWith(`${id}:`)) shots.delete(k)
+                void loadShot($, id, pmode, at, variant)
+              }}
+            />
+          </Box>
+        )
         if (!shot) {
           body = (
             <Box flexDirection="column" gap={1}>
@@ -471,6 +501,7 @@ export const register: Register = on => {
                 ? <Text dimColor>Rendering the {pmode} page on the server… (started when the order was opened; a few seconds)</Text>
                 : <Button key="load-preview" hotkey="l" label={`Render ${pmode} preview`} onPress={() => { void loadShot($, id, pmode, at, variant) }} />}
               {modeRow}
+              {templateRow}
             </Box>
           )
           break
@@ -480,6 +511,7 @@ export const register: Register = on => {
             <Box flexDirection="column" gap={1}>
               <Text color="red">Preview failed: {shot.error}</Text>
               {modeRow}
+              {templateRow}
             </Box>
           )
           break
@@ -492,7 +524,7 @@ export const register: Register = on => {
         const columns = Math.max(1, Math.min(255, width))
         const rows = Math.max(1, Math.min(255, Math.round((columns * sliceH) / m.width / 2)))
         const caption = `${m.mode} · ${m.width}×${m.height} px · slice ${i + 1}/${n} (${from}–${from + sliceH} px)${m.truncated ? ' · page cut' : ''} · ${Math.round(m.elapsed_ms / 1000)} s`
-        const applied = m.mode === 'proposed' ? `${m.applied_count}/${m.applied.length} edits applied${m.not_found.length ? `, not found: ${m.not_found.length}` : ''}` : ''
+        const applied = m.mode === 'proposed' ? `${m.applied_count}/${m.applied.length} ${m.template_url ? 'parts placed' : 'edits applied'}${m.not_found.length ? `, not found: ${m.not_found.length}` : ''}` : ''
         const nav = (
           <Box gap={1}>
             <Button hotkey="u" onPress={() => { void (async () => { const k = Math.max(0, i - 1); await update($, slice, () => k); if (!shots.has(shotKey(id, pmode, k, variant))) void loadShot($, id, pmode, k, variant) })() }}>Up</Button>
@@ -511,11 +543,12 @@ export const register: Register = on => {
         }
         body = (
           <Box flexDirection="column" gap={1}>
-            <Text dimColor wrap="truncate-end">{m.url}</Text>
+            <Text dimColor wrap="truncate-end">{m.template_url ? `${m.page_url ?? ''} (on template ${m.template_url})` : m.url}</Text>
             <Text dimColor>{caption}{applied ? ` · ${applied}` : ''}</Text>
             {picture}
             {m.view_url && <Link href={m.view_url}>Open this preview as a page</Link>}
             <Box gap={1}>{nav}{modeRow}</Box>
+            {templateRow}
           </Box>
         )
         break

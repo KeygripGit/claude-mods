@@ -25,24 +25,28 @@ headings. Tabs on `1`–`7`, `b` back to the queue:
 | 4 Schema | the JSON-LD with the `<script>` wrapper stripped, a copy button |
 | 5 Verify | the post-publish steps as toggles, with a checked count |
 | 6 Notes | context changed since this version, recommended-not-applied, checked-and-left-alone |
-| 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, each outlined in brand cyan, removals marked with a dashed red rule); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai |
+| 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, each outlined in brand cyan, removals marked with a dashed red rule); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai. A **net-new** page (no live URL yet) is shown on a **template**: a live page of the same site — the server picks the inventory page nearest the new URL's path, and a **Template URL** field under the picture swaps in any other live page on the site. **live** is the template as served; **proposed** is the template with its article thrown out and the work order's body, H1 and hero in its place, so the new page appears in the site's own layout |
 
 At the bottom, a **Live URL** field whose submit calls `kg_report_deployed` with `target: manual`.
 It refuses an empty URL. Nothing else in the mod writes.
 
 ## Installing it (clients, and anyone outside the monorepo)
 
-The app serves this folder as a Claude Code plugin marketplace (`web/mods.py`, #1516):
-`GET /mods/marketplace.json` lists each mod under `app/mods/` as an `archive` source and
-`GET /mods/<name>-<version>.zip` is the mod zipped on demand (deterministic, cached per
-process, sha256 in the manifest). Public, like `/healthz`: a client needs no GitHub account and
-no git on the machine. The client-facing guide is **`/mods/`** (desktop click path, terminal
-commands); the project's Client MCP access box prints the two commands and the key to paste:
+The client path is the **public GitHub marketplace `KeygripGit/claude-mods`**, published from
+this folder by `bin/publish-mods` (bump `version` first). The desktop app's plugin browser lists
+git-hosted marketplaces and showed nothing for a URL-hosted one (measured 2026-10-03), so the
+guide — **`/mods/`** on the app, Desktop and Terminal sections — uses the repo for both:
 
 ```
-claude plugin marketplace add https://app.keygrip.ai/mods/marketplace.json
+claude plugin marketplace add KeygripGit/claude-mods
 claude plugin install workorder-pane@keygrip
 ```
+
+The app also serves this folder as a marketplace (`web/mods.py`: `GET /mods/marketplace.json`
+with `archive` sources, `GET /mods/<name>-<version>.zip` built on demand, deterministic,
+sha256 in the manifest) under the name **`keygrip-app`** — the no-git fallback for a terminal.
+The two names differ on purpose: the engine refuses to add a marketplace whose name is already
+declared with another source, with a plain "Failed to add marketplace" in the desktop app.
 
 The pane talks to `https://app.keygrip.ai/client/mcp` itself — one JSON-RPC `tools/call` POST
 per tool over `$.http.fetch`, the project's `kg_client_` key as the Bearer header — and asks for
@@ -115,7 +119,12 @@ on the client MCP server (and the same tool on the internal `/mcp`) calls
 image's own Chromium loads the run's `page_url`, and in `proposed` mode runs the work order's
 `BodyEdit`s against the live DOM by the same rules a person follows in the CMS editor (find by
 meaning, a section runs to the next heading of the same level, edits apply in order), then
-screenshots the page in 1280×1600 slices. One call returns one slice as an image block plus a
+screenshots the page in 1280×1600 slices. A net-new page has no live URL, so the browser loads
+a **template** instead — `template_url` (a live page on the same site; anything off the site
+is refused) or the inventory page nearest the new URL's path — and in `proposed` mode finds
+the template's content column, removes the article from its first text block onward (the H1,
+byline and hero above it stay), appends the work order's body there, and swaps in the new H1,
+hero and title. The metadata then carries `template_url` and `page_url` beside `url`. One call returns one slice as an image block plus a
 JSON block (`slices`, `height`, `applied` per edit, `view_url`). Renders are cached ten
 minutes per (run, version, mode) in the web process. The web twin is
 `…/studio/runs/<id>/preview/?mode=proposed`, which stacks every slice and lists each edit's
@@ -140,7 +149,5 @@ dropped silently).
 ## Not built
 
 - Structured JSON from the server beside the markdown, so the heading parser can go.
-- A `proposed` render for a net-new page (no live URL yet): render the body in Keygrip's own
-  preview template instead.
 - A shared render cache (R2 or Postgres) if the per-process one proves too cold across the
   two web boxes.
