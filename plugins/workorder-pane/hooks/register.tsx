@@ -93,6 +93,24 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
   { id: 'preview', label: 'Preview', hotkey: '7' },
 ]
 
+// One word per row: blocked outranks everything (the server refuses the document), a
+// reported deploy outranks the approval it needed, and `approved` is the stamp a publishing
+// step reads (#1518) — a ready row is one nobody has signed off yet.
+function stateOf(r: QueueRow): string {
+  return r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : r.approved_at ? 'approved' : 'ready'
+}
+
+// kg_workorder_approve, then the queue refetches so the row's state follows the server.
+async function setApproval($: EngineInterface, id: number, approved: boolean) {
+  const r = await callTool($, 'kg_workorder_approve', { optimization_id: id, approved })
+  if (r.isError) { $.ui.toast(`${approved ? 'Approve' : 'Withdraw'} failed: ${unwrap(r.content).slice(0, 120)}`); return }
+  $.ui.toast(approved ? `#${id} approved for publishing` : `#${id} approval withdrawn`)
+  queue = null
+  await update($, tick, n => (n ?? 0) + 1)
+  const superseded = await read($, includeSuperseded)
+  void loadQueue($, superseded)
+}
+
 function meter(n: number, limit: number, width = 20): string {
   const filled = Math.min(width, Math.round((n / limit) * width))
   return `${'#'.repeat(filled)}${'-'.repeat(width - filled)} ${n}/${limit}`
@@ -321,7 +339,7 @@ export const register: Register = on => {
             <Box flexDirection="column">
               <Text dimColor>{'id    ver  mode      state       keyword'}</Text>
               {rows.map(r => {
-                const flag = r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : 'ready'
+                const flag = stateOf(r)
                 const label = `#${String(r.id).padEnd(4)} v${String(r.version).padEnd(3)} ${r.mode.padEnd(9)} ${flag.padEnd(11)} ${r.keyword}`
                 return (
                   <Button
@@ -346,13 +364,13 @@ export const register: Register = on => {
                 <Box flexGrow={1}><Text dimColor bold>keyword</Text></Box>
               </Box>
               {rows.map(r => {
-                const flag = r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : 'ready'
+                const flag = stateOf(r)
                 return (
                   <Box key={`qrow-${r.id}`} flexDirection="row" gap={1} alignItems="center">
                     <Box width="9%"><Text dimColor={r.blocked}>#{r.id}</Text></Box>
                     <Box width="7%"><Text dimColor={r.blocked}>v{r.version}</Text></Box>
                     <Box width="13%"><Text dimColor={r.blocked}>{r.mode === 'net_new' ? 'net new' : r.mode}</Text></Box>
-                    <Box width="16%"><Text color={r.blocked ? 'red' : r.deployed_at ? 'green' : undefined} dimColor={r.blocked}>{flag}</Text></Box>
+                    <Box width="16%"><Text color={r.blocked ? 'red' : r.deployed_at ? 'green' : r.approved_at ? 'cyan' : undefined} dimColor={r.blocked}>{flag}</Text></Box>
                     <Box flexGrow={1}>
                       <Button key={`row-${r.id}`} plain dimColor={r.blocked} label={r.keyword} onPress={open(r)} />
                     </Box>
@@ -594,7 +612,7 @@ export const register: Register = on => {
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
           <Text bold>#{id} · {row?.keyword ?? wo.title}</Text>
-          <Text dimColor wrap="truncate-end">{wo.title}{row ? ` · v${row.version} · ${row.mode}` : ''}</Text>
+          <Text dimColor wrap="truncate-end">{wo.title}{row ? ` · v${row.version} · ${row.mode} · ${stateOf(row)}${row.approved_at ? ` by ${row.approved_by || 'someone'}` : ''}` : ''}</Text>
         </Box>
         <Box gap={1} flexWrap="wrap">
           {TABS.map(t => (
@@ -606,6 +624,16 @@ export const register: Register = on => {
           {back}
         </Box>
         {body}
+        <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>
+          <Text dimColor>{row?.approved_at
+            ? `Approved for publishing${row.approved_by ? ` by ${row.approved_by}` : ''}. An edit makes a new, unapproved version.`
+            : 'Approve once the preview and fields look right; a publishing step reads the stamp. To change the page first, tell Claude what to change — it edits with kg_save_version and the new version appears here.'}</Text>
+          <Box gap={1}>
+            {row?.approved_at
+              ? <Button key="unapprove" hotkey="a" onPress={() => { void setApproval($, id, false) }}>Withdraw approval</Button>
+              : <Button key="approve" hotkey="a" variant="primary" onPress={() => { void setApproval($, id, true) }}>Approve for publishing</Button>}
+          </Box>
+        </Box>
         <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>
           <Text dimColor>After publishing, report where the page went (anchors the before/after report):</Text>
           <Input

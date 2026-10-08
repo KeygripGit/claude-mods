@@ -27,6 +27,14 @@ headings. Tabs on `1`–`7`, `b` back to the queue:
 | 6 Notes | context changed since this version, recommended-not-applied, checked-and-left-alone |
 | 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, removals marked with a dashed red rule; the web page the link opens marks each change in the margin and shows the work order's instruction for it on click); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai. A **net-new** page (no live URL yet) is shown on a **template**: a live page of the same site — the server picks the inventory page nearest the new URL's path, and a **Template URL** field under the picture swaps in any other live page on the site. **live** is the template as served; **proposed** is the template with its article thrown out and the work order's body, H1 and hero in its place, so the new page appears in the site's own layout |
 
+Under the tabs, an **Approve for publishing** button (`a`) calls `kg_workorder_approve`; on an
+approved order it becomes **Withdraw approval**. The queue's state column reads `approved` for a
+stamped row (`ready` is a row nobody has signed off; `deployed` outranks both). The stamp is per
+version — an edit makes a new, unapproved version — and it is what a publishing step will read
+(#1518). **Editing** is not done in the pane: the reader says so and points at the loop — tell
+Claude what to change, it calls `kg_fetch_body` → `kg_save_version` on the client server
+(configure that server in the session, see below), and the new version appears in the queue.
+
 At the bottom, a **Live URL** field whose submit calls `kg_report_deployed` with `target: manual`.
 It refuses an empty URL. Nothing else in the mod writes.
 
@@ -84,7 +92,8 @@ needs a Windows path. The copy that works today:
     "mcp__keygrip-workorder__kg_fetch_workorder",
     "mcp__keygrip-workorder__kg_articles",
     "mcp__keygrip-workorder__kg_article_status",
-    "mcp__keygrip-workorder__kg_workorder_preview"
+    "mcp__keygrip-workorder__kg_workorder_preview",
+    "mcp__keygrip-workorder__kg_fetch_body"
   ] }
 }
 ```
@@ -94,8 +103,9 @@ The `allow` list matters in **Auto** permission mode only for the *developer* pa
 the tools come from a hand-configured server: the pane's MCP calls come from a button, not
 a prompt, so the auto-mode classifier has nothing to match them against and refuses them
 ("the request that produced this action did not ask for one"). Allowed tools skip the classifier.
-The write tool `kg_report_deployed` is deliberately not allowed; switch the session off Auto, or
-approve the prompt, when you report a deploy from the pane.
+The write tools (`kg_report_deployed`, `kg_workorder_approve`, `kg_save_version`,
+`kg_restore_version`) are deliberately not allowed; switch the session off Auto, or approve the
+prompt, when you report a deploy or approve from the pane, or ask Claude to edit a page.
 
 Sync the Windows copy from WSL after a change:
 

@@ -115,6 +115,8 @@ export function parseWorkOrder(md: string): WorkOrder {
 export type QueueRow = {
   id: number; keyword: string; page_url: string; slug: string; version: number; mode: string
   blocked: boolean; blocker_count: number; deployed_at: string | null; deployed_url: string; status: string
+  // The approval stamp (#1518): a person said this version may be published. Per version.
+  approved_at?: string | null; approved_by?: string
 }
 
 // kg_* results arrive as a text block holding {"result": <json string or markdown>, "keygrip_tools_version": ...}.
