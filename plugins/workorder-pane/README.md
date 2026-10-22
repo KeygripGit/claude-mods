@@ -11,7 +11,7 @@ client deploy loop in a pane instead of a wall of markdown in a tool row. Tracks
 ## What it draws
 
 **Queue.** One row per work order from `kg_workorders`: id, version, mode, state, keyword.
-Blocked rows are dimmed and refuse to open (the server refuses them too). `r` refresh,
+Blocked rows are dimmed and refuse to open (the server refuses them too). Above the rows, the **open pull request** approved pages go into (#1855: one PR per batch in the client's own repo, reported by their agent with `kg_pull_request`); an approved page already in a PR reads `in PR`. `r` refresh,
 `s` show/hide superseded versions.
 
 **Reader** (pick a row). Fetches `kg_fetch_workorder` once and splits the document on its fixed
@@ -25,7 +25,7 @@ headings. Tabs on `1`–`7`, `b` back to the queue:
 | 4 Schema | the JSON-LD with the `<script>` wrapper stripped, a copy button |
 | 5 Verify | the post-publish steps as toggles, with a checked count |
 | 6 Notes | context changed since this version, recommended-not-applied, checked-and-left-alone |
-| 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, removals marked with a dashed red rule; the web page the link opens marks each change in the margin and shows the work order's instruction for it on click); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai. A **net-new** page (no live URL yet) is shown on a **template**: a live page of the same site — the server picks the inventory page nearest the new URL's path, and a **Template URL** field under the picture swaps in any other live page on the site. **live** is the template as served; **proposed** is the template with its article thrown out and the work order's body, H1 and hero in its place, so the new page appears in the site's own layout |
+| 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, removals marked with a dashed red rule; the web page the link opens shows the page alone under a header, and an edit the preview cannot apply marks the work order stale for staff instead of appearing on the page); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai. A **net-new** page (no live URL yet) is shown on a **template**: a live page of the same site — the server picks the inventory page nearest the new URL's path, and a **Template URL** field under the picture swaps in any other live page on the site. **live** is the template as served; **proposed** is the template with its article thrown out and the work order's body, H1 and hero in its place, so the new page appears in the site's own layout |
 
 Under the tabs, an **Approve for publishing** button (`a`) calls `kg_workorder_approve`; on an
 approved order it becomes **Withdraw approval**. The queue's state column reads `approved` for a
@@ -137,8 +137,10 @@ byline and hero above it stay), appends the work order's body there, and swaps i
 hero and title. The metadata then carries `template_url` and `page_url` beside `url`. One call returns one slice as an image block plus a
 JSON block (`slices`, `height`, `applied` per edit, `view_url`). Renders are cached ten
 minutes per (run, version, mode) in the web process. The web twin is
-`…/studio/runs/<id>/preview/?mode=proposed`, which stacks every slice and lists each edit's
-outcome; that is the `view_url` the desktop pane links to.
+`…/studio/runs/<id>/preview/?mode=proposed`, which shows the page alone under a header, as a
+live document (the render's DOM, scripts stripped, in a sandboxed frame) rather than slices (an
+edit the preview cannot apply marks the work order stale rather than appearing on the page);
+that is the `view_url` the desktop pane links to.
 
 Pixels in the terminal still need kitty ≥ 0.28 or Ghostty (see `docs/claude-code-mods.md`).
 

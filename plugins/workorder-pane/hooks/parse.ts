@@ -117,7 +117,12 @@ export type QueueRow = {
   blocked: boolean; blocker_count: number; deployed_at: string | null; deployed_url: string; status: string
   // The approval stamp (#1518): a person said this version may be published. Per version.
   approved_at?: string | null; approved_by?: string
+  // The pull request this page was reported in (#1855, kg_pull_request), '' when none.
+  pull_request_url?: string
 }
+
+// The PR newly approved pages go onto (#1855): one open PR per batch in the client's repo.
+export type OpenPullRequest = { url: string; branch: string; state: string; optimization_ids: number[] }
 
 // kg_* results arrive as a text block holding {"result": <json string or markdown>, "keygrip_tools_version": ...}.
 export function unwrap(blocks: { type: string; text?: string }[]): string {

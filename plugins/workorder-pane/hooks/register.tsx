@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 
 import type { Tab } from '../types'
 import { parseWorkOrder, unwrap } from './parse'
-import type { QueueRow, WorkOrder, Field } from './parse'
+import type { OpenPullRequest, QueueRow, WorkOrder, Field } from './parse'
 
 const PANE = 'workorders'
 // The pane talks to Keygrip's client MCP endpoint itself, over the engine's fetch, with the
@@ -66,6 +66,7 @@ const previewMode = atom({ plugin: 'workorder-pane', key: 'previewMode' } as con
 // empties it and the next draw refetches, keyed by the ids $.state still holds.
 type Loaded<T> = { ok: true; data: T } | { ok: false; error: string }
 let queue: Loaded<QueueRow[]> | null = null
+let openPr: OpenPullRequest | null = null
 let queueKey: string | null = ''
 const orders = new Map<number, Loaded<WorkOrder>>()
 // One rendered slice from kg_workorder_preview, keyed by `${id}:${mode}:${slice}:${variant}`.
@@ -96,15 +97,24 @@ const TABS: { id: Tab; label: string; hotkey: string }[] = [
 // One word per row: blocked outranks everything (the server refuses the document), a
 // reported deploy outranks the approval it needed, and `approved` is the stamp a publishing
 // step reads (#1518) — a ready row is one nobody has signed off yet.
+// An approved page already reported in a pull request reads `in PR` (#1855).
 function stateOf(r: QueueRow): string {
-  return r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed' : r.approved_at ? 'approved' : 'ready'
+  return r.blocked ? `BLOCKED(${r.blocker_count})` : r.deployed_at ? 'deployed'
+    : r.approved_at ? (r.pull_request_url ? 'in PR' : 'approved') : 'ready'
+}
+
+// Where an approved page goes next in the client's repo: the open PR's branch, or a new PR.
+function prHint(id: number): string {
+  return openPr
+    ? `Ask Claude to add #${id} to the open PR ${openPr.url} (branch ${openPr.branch}), not a new one.`
+    : `Ask Claude to open one PR for #${id} and report it; later approvals join it.`
 }
 
 // kg_workorder_approve, then the queue refetches so the row's state follows the server.
 async function setApproval($: EngineInterface, id: number, approved: boolean) {
   const r = await callTool($, 'kg_workorder_approve', { optimization_id: id, approved })
   if (r.isError) { $.ui.toast(`${approved ? 'Approve' : 'Withdraw'} failed: ${unwrap(r.content).slice(0, 120)}`); return }
-  $.ui.toast(approved ? `#${id} approved for publishing` : `#${id} approval withdrawn`)
+  $.ui.toast(approved ? `#${id} approved. ${prHint(id)}` : `#${id} approval withdrawn`)
   queue = null
   await update($, tick, n => (n ?? 0) + 1)
   const superseded = await read($, includeSuperseded)
@@ -125,8 +135,9 @@ async function loadQueue($: EngineInterface, superseded: boolean) {
     const r = await callTool($, 'kg_workorders', { include_superseded: superseded })
     if (r.isError) queue = { ok: false, error: unwrap(r.content) }
     else {
-      const parsed = JSON.parse(unwrap(r.content)) as { items?: QueueRow[] }
+      const parsed = JSON.parse(unwrap(r.content)) as { items?: QueueRow[]; open_pull_request?: OpenPullRequest | null }
       queue = { ok: true, data: parsed.items ?? [] }
+      openPr = parsed.open_pull_request ?? null
     }
     queueKey = key
   } catch (err) {
@@ -334,6 +345,9 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column" gap={1}>
           <Text bold>{rows.length} work orders · {ready} ready · {rows.length - ready} blocked{superseded ? ' · superseded included' : ''}</Text>
+          <Text key="open-pr" dimColor wrap="truncate-end">{openPr
+            ? `Open PR: ${openPr.url} · branch ${openPr.branch} · ${openPr.optimization_ids.length} page${openPr.optimization_ids.length === 1 ? '' : 's'}`
+            : 'No open PR — the first approved page starts one.'}</Text>
           {surface === 'terminal' ? (
             // Monospace: one padded line per row is the table.
             <Box flexDirection="column">
@@ -626,7 +640,7 @@ export const register: Register = on => {
         {body}
         <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>
           <Text dimColor>{row?.approved_at
-            ? `Approved for publishing${row.approved_by ? ` by ${row.approved_by}` : ''}. An edit makes a new, unapproved version.`
+            ? `Approved for publishing${row.approved_by ? ` by ${row.approved_by}` : ''}. ${row.pull_request_url ? `In PR ${row.pull_request_url}.` : prHint(id)} An edit makes a new, unapproved version.`
             : 'Approve once the preview and fields look right; a publishing step reads the stamp. To change the page first, tell Claude what to change — it edits with kg_save_version and the new version appears here.'}</Text>
           <Box gap={1}>
             {row?.approved_at
