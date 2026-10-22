@@ -2,8 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 
 import type { Tab } from '../types'
-import { parseWorkOrder, rowLabel, unwrap } from './parse'
-import type { OpenPullRequest, QueueRow, WorkOrder, Field } from './parse'
+import { readWorkOrder, rowLabel, unwrap } from './workorder'
+import type { OpenPullRequest, QueueRow, WorkOrder, Field } from './workorder'
 
 const PANE = 'workorders'
 // The pane talks to Keygrip's client MCP endpoint itself, over the engine's fetch, with the
@@ -126,6 +126,52 @@ function meter(n: number, limit: number, width = 20): string {
   return `${'#'.repeat(filled)}${'-'.repeat(width - filled)} ${n}/${limit}`
 }
 
+function outOfBand(f: Field): boolean {
+  const [lo, hi] = f.band
+  return (lo !== null && f.chars < lo) || (hi !== null && f.chars > hi)
+}
+
+function overview(wo: WorkOrder): string {
+  const parts = [`**Mode:** ${wo.mode}${wo.prepared ? `  \n**Prepared:** ${wo.prepared}` : ''}`]
+  if (wo.blocked) parts.push(`**Blocked:** ${wo.blocking.map(b => b.reason).join('; ')}`)
+  if (wo.keyword.primary || wo.keyword.secondaries.length) {
+    parts.push(['### Keyword target', '',
+      ...(wo.keyword.primary ? [`- **Primary:** ${wo.keyword.primary}`] : []),
+      ...(wo.keyword.secondaries.length ? [`- **Secondary:** ${wo.keyword.secondaries.join(', ')}`] : []),
+    ].join('\n'))
+  }
+  if (wo.what_changed.length) parts.push(['### What changed', '', ...wo.what_changed.map((w, i) => `${i + 1}. ${w}`)].join('\n'))
+  if (wo.redirect) parts.push(`### Redirect\n\n\`${wo.redirect.from_url}\` answers ${wo.redirect.status} to \`${wo.redirect.to_url}\` once this page is live.`)
+  for (const a of wo.assets) {
+    parts.push([a.disposition === 'upload' ? '### Hero image → add to the page' : '### Hero image → keep in place', '',
+      `- **URL:** ${a.url}`, ...(a.alt ? [`- **Alt text:** ${a.alt}`] : [])].join('\n'))
+  }
+  return parts.join('\n\n')
+}
+
+// The Notes tab: what changed in the client record since this version, then the editor notes.
+function noteSections(wo: WorkOrder): string[] {
+  const out: string[] = []
+  if (wo.context_changes.length) {
+    const bySection = new Map<string, string[]>()
+    for (const c of wo.context_changes) {
+      const flag = c.recheck_due ? `${c.reason}; recheck due${c.recheck_at ? ` ${c.recheck_at}` : ''}` : c.reason
+      for (const name of c.sections) bySection.set(name, [...(bySection.get(name) ?? []), `    - fact ${c.fact_id} (${flag}): ${c.text}`])
+    }
+    out.push(['## Context changed since this version', '',
+      ...[...bySection].flatMap(([name, lines]) => [`- **${name}**`, ...lines])].join('\n'))
+  }
+  if (wo.recommended.length) {
+    out.push(['## Recommended, not applied', '', ...wo.recommended.map(r =>
+      `- **${r.label}**${r.heading ? ` under "${r.heading}"` : ''}: ${r.reason}`
+      + (r.text ? ` Current text: "${r.text}"` : '') + (r.suggestion ? ` Suggested: ${r.suggestion}` : ''))].join('\n'))
+  }
+  if (wo.checked.length) {
+    out.push(['## Checked and left alone', '', ...wo.checked.map(c => `- ${c.label}${c.reason ? ` (${c.reason})` : ''}`)].join('\n'))
+  }
+  return out
+}
+
 async function loadQueue($: EngineInterface, superseded: boolean) {
   const key = `queue:${superseded}`
   if (inflight.has(key)) return
@@ -155,9 +201,10 @@ async function loadOrder($: EngineInterface, id: number) {
   inflight.add(key)
   await update($, tick, n => (n ?? 0) + 1)
   try {
-    const r = await callTool($, 'kg_fetch_workorder', { optimization_id: id })
+    // The order as data (#1524), not the markdown: the pane draws it, an agent follows the document.
+    const r = await callTool($, 'kg_fetch_workorder', { optimization_id: id, format: 'json' })
     const text = unwrap(r.content)
-    orders.set(id, r.isError ? { ok: false, error: text } : { ok: true, data: parseWorkOrder(text) })
+    orders.set(id, r.isError ? { ok: false, error: text } : { ok: true, data: readWorkOrder(text) })
   } catch (err) {
     orders.set(id, { ok: false, error: String(err) })
   } finally {
@@ -450,9 +497,10 @@ export const register: Register = on => {
                 </Box>
                 <Code source={f.value} />
                 <Box gap={2}>
-                  {f.limit !== undefined && (
-                    <Text color={f.chars > f.limit ? 'red' : 'green'}>{meter(f.chars, f.limit)}</Text>
+                  {f.measured && f.value && f.band[1] !== null && (
+                    <Text color={outOfBand(f) ? 'red' : 'green'}>{meter(f.chars, f.band[1])}</Text>
                   )}
+                  {f.blocked_reason && <Text color="red">blocked: {f.blocked_reason}</Text>}
                   {f.unchanged && <Text dimColor>unchanged on the live page</Text>}
                   <Button plain onPress={copy(f.value, f.name)}>copy</Button>
                 </Box>
@@ -465,36 +513,44 @@ export const register: Register = on => {
       case 'edits':
         body = (
           <Box flexDirection="column" gap={1}>
-            {wo.bodyIntro && <Markdown text={wo.bodyIntro} />}
-            {wo.fullBody !== null && (
+            {wo.body.paste && (
               <Box flexDirection="column">
-                <Box gap={2}><Text bold>BODY (full page)</Text><Button plain onPress={copy(wo.fullBody, 'the body')}>copy</Button></Box>
-                <Code source={wo.fullBody} language="html" />
+                <Box gap={2}><Text bold>{wo.body.strategy === 'merge' ? 'BODY (merge into the live article; keep its images and media)' : 'BODY (full page)'}</Text><Button plain onPress={copy(wo.body.html, 'the body')}>copy</Button></Box>
+                <Code source={wo.body.html} language="html" />
               </Box>
             )}
-            {wo.edits.map(ed => (
-              <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
-                <Text bold>Edit {ed.n} of {ed.of}: {ed.title}</Text>
-                <Text dimColor>Why: {ed.why}</Text>
-                <Text dimColor>Where: {ed.where}</Text>
-                {ed.find && <Text>Find:</Text>}
-                {ed.find && <Code source={ed.find} />}
-                <Box gap={2}>
-                  <Text>{ed.kind === 'remove' ? 'Replace with: nothing; remove it.' : ed.kind === 'insert' ? 'Insert:' : 'Replace with:'}</Text>
-                  {ed.replace && <Button plain onPress={copy(ed.replace, `edit ${ed.n}`)}>copy</Button>}
+            {wo.edits.length > 0 && <Text dimColor>Apply these {wo.edits.length} edits in place, in the CMS editor, in the order listed. "Find" quotes the page as it reads today; match by meaning.</Text>}
+            {wo.edits.map((ed, i) => {
+              const removes = ed.kind.startsWith('delete')
+              const inserts = ed.kind.startsWith('insert')
+              return (
+                <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
+                  <Text bold>Edit {i + 1} of {wo.edits.length}: {ed.label}</Text>
+                  {ed.why && <Text dimColor>Why: {ed.why}</Text>}
+                  {ed.where && <Text dimColor>Where: {ed.where}</Text>}
+                  {ed.before_text && <Text>{removes ? 'Remove (current text):' : 'Find:'}</Text>}
+                  {ed.before_text && <Code source={ed.before_text} />}
+                  <Box gap={2}>
+                    <Text>{removes ? 'Replace with: nothing; remove it.' : inserts ? 'Insert:' : 'Replace with:'}</Text>
+                    {ed.after_html && <Button plain onPress={copy(ed.after_html, `edit ${i + 1}`)}>copy</Button>}
+                  </Box>
+                  {ed.after_html && <Code source={ed.after_html} language="html" />}
                 </Box>
-                {ed.replace && <Code source={ed.replace} language="html" />}
-              </Box>
-            ))}
-            {wo.edits.length === 0 && wo.fullBody === null && <Text dimColor>No body edits in this work order.</Text>}
+              )
+            })}
+            {wo.edits.length === 0 && !wo.body.paste && <Text dimColor>No body edits in this work order.</Text>}
           </Box>
         )
         break
       case 'schema':
-        body = wo.schema ? (
+        body = wo.structured_data.length ? (
           <Box flexDirection="column" gap={1}>
-            <Box gap={2}><Text bold>JSON-LD → inject into &lt;head&gt; (merge into an existing @graph)</Text><Button plain onPress={copy(wo.schema, 'the JSON-LD')}>copy</Button></Box>
-            <Code source={wo.schema} language="json" />
+            {wo.structured_data.map((s, i) => (
+              <Box flexDirection="column">
+                <Box gap={2}><Text bold>JSON-LD: {s.schema_type} → inject into &lt;head&gt; (merge into an existing @graph)</Text><Button plain onPress={copy(s.json, `JSON-LD ${i + 1}`)}>copy</Button></Box>
+                <Code source={s.json} language="json" />
+              </Box>
+            ))}
           </Box>
         ) : <Text dimColor>No structured data in this work order.</Text>
         break
@@ -514,16 +570,16 @@ export const register: Register = on => {
           </Box>
         )
         break
-      case 'notes':
+      case 'notes': {
+        const notes = noteSections(wo)
         body = (
           <Box flexDirection="column" gap={1}>
-            {wo.contextChanged && <Markdown text={`## Context changed since this version\n\n${wo.contextChanged}`} />}
-            {wo.recommended && <Markdown text={`## Recommended, not applied\n\n${wo.recommended}`} />}
-            {wo.checked && <Markdown text={`## Checked and left alone\n\n${wo.checked}`} />}
-            {!wo.contextChanged && !wo.recommended && !wo.checked && <Text dimColor>No notes.</Text>}
+            {notes.map(text => <Markdown text={text} />)}
+            {notes.length === 0 && <Text dimColor>No notes.</Text>}
           </Box>
         )
         break
+      }
       case 'preview': {
         const variant = e.surface === 'terminal' ? 'full' : 'thumb'
         const key = shotKey(id, pmode, at, variant)
@@ -622,7 +678,7 @@ export const register: Register = on => {
       default:
         body = (
           <Box flexDirection="column" gap={1}>
-            <Markdown text={`**Mode:** ${wo.mode}  \n**Prepared:** ${wo.prepared}\n\n### Keyword target\n\n${wo.keywordTarget}\n\n### What changed\n\n${wo.whatChanged}${wo.heroImage ? `\n\n### Hero image\n\n${wo.heroImage}` : ''}`} />
+            <Markdown text={overview(wo)} />
           </Box>
         )
     }
@@ -630,8 +686,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text bold>#{id} · {row ? rowLabel(row) : wo.title}</Text>
-          <Text dimColor wrap="truncate-end">{wo.title}{row ? ` · v${row.version} · ${row.mode} · ${stateOf(row)}${row.approved_at ? ` by ${row.approved_by || 'someone'}` : ''}` : ''}</Text>
+          <Text bold>#{id} · {row ? rowLabel(row) : wo.canonical}</Text>
+          <Text dimColor wrap="truncate-end">{wo.canonical}{row ? ` · v${row.version} · ${row.mode} · ${stateOf(row)}${row.approved_at ? ` by ${row.approved_by || 'someone'}` : ''}` : ''}</Text>
         </Box>
         <Box gap={1} flexWrap="wrap">
           {TABS.map(t => (

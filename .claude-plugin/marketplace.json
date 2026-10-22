@@ -11,7 +11,7 @@
       "name": "workorder-pane",
       "source": "./plugins/workorder-pane",
       "description": "Keygrip work orders in a pane: your project's deploy queue, each order's fields, edits, schema and verify steps, and the page before and after the edits. Paste your project's client key once.",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "category": "productivity"
     }
   ]

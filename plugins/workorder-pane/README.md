@@ -14,15 +14,16 @@ client deploy loop in a pane instead of a wall of markdown in a tool row. Tracks
 Blocked rows are dimmed and refuse to open (the server refuses them too). Above the rows, the **open pull request** approved pages go into (#1855: one PR per batch in the client's own repo, reported by their agent with `kg_pull_request`); an approved page already in a PR reads `in PR`. The queue is fetched from the server every time the pane opens and every time you go back to it (nothing from an earlier open is shown as current); a row with no keyword (an order made from a URL) is named by its slug. `r` refresh,
 `s` show/hide superseded versions.
 
-**Reader** (pick a row). Fetches `kg_fetch_workorder` once and splits the document on its fixed
-headings. Tabs on `1`–`7`, `b` back to the queue:
+**Reader** (pick a row). Fetches `kg_fetch_workorder(format="json")` once: the work order as
+data, built on the server from the same work order IR the markdown is rendered from (#1524), so
+nothing in the pane reads the document's headings. Tabs on `1`–`7`, `b` back to the queue:
 
 | Tab | Shows |
 |---|---|
-| 1 Overview | mode, prepared date, keyword target, "what changed", hero image |
-| 2 Fields | each deployable value in a code block, a length meter against its SEO limit (red when over), `unchanged` when it matches the live page, a copy button |
+| 1 Overview | mode, prepared date, blockers, keyword target, "what changed", redirect, hero image |
+| 2 Fields | each deployable value in a code block, a length meter against the rubric's band for that field (red when outside it), `unchanged` when it matches the live page, a copy button |
 | 3 Edits | each body edit boxed: why, where, the *Find* text and the *Replace/Insert* HTML, a copy button; a net-new order shows the full body |
-| 4 Schema | the JSON-LD with the `<script>` wrapper stripped, a copy button |
+| 4 Schema | each JSON-LD node with the `<script>` wrapper stripped, a copy button |
 | 5 Verify | the post-publish steps as toggles, with a checked count |
 | 6 Notes | context changed since this version, recommended-not-applied, checked-and-left-alone |
 | 7 Preview | the page rendered **on the server** by `kg_workorder_preview` (the first slice starts rendering the moment an order is opened, so the tab usually draws at once): `p` toggles **live** (as served now) and **proposed** (the work order's edits applied in the browser, removals marked with a dashed red rule; the web page the link opens shows the page alone under a header, and an edit the preview cannot apply marks the work order stale for staff instead of appearing on the page); `n`/`u` move through 1600 px slices, `r` re-renders. Terminal: pixels (kitty/Ghostty). Desktop/VS Code: a half-scale JPEG inside an Svg, plus a link to the same preview as a page on app.keygrip.ai. A **net-new** page (no live URL yet) is shown on a **template**: a live page of the same site — the server picks the inventory page nearest the new URL's path, and a **Template URL** field under the picture swaps in any other live page on the site. **live** is the template as served; **proposed** is the template with its article thrown out and the work order's body, H1 and hero in its place, so the new page appears in the site's own layout |
@@ -151,8 +152,10 @@ claude plugin validate app/mods/workorder-pane   # manifest + what the module ho
 claude plugin test     app/mods/workorder-pane   # hooks/*.test.tsx against the engine
 ```
 
-The parser (`hooks/parse.ts`) keys on the document's headings; `hooks/fixture.ts` is a compact
-work order in that shape, modelled on optimization 502. Rules the validator enforces that cost a
+`hooks/workorder.ts` holds the shapes the server answers with; `hooks/fixture.ts` is a compact
+work order in the JSON shape, modelled on optimization 502. The server side of that shape is
+`packager.render_workorder_json`, pinned against the markdown by
+`content.tests.test_workorder_ir.TestWorkorderJsonMatchesTheMarkdown`. Rules the validator enforces that cost a
 round each: `$` may only be passed to a top-level function declaration; `atom()` references need
 literal plugin strings; a Button takes one string child or `label`; a fetch must start from a
 command or button handler, never from the render hook (a write from the draw's async chain is
@@ -160,6 +163,5 @@ dropped silently).
 
 ## Not built
 
-- Structured JSON from the server beside the markdown, so the heading parser can go.
 - A shared render cache (R2 or Postgres) if the per-process one proves too cold across the
   two web boxes.
