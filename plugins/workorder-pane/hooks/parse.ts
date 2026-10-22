@@ -113,12 +113,20 @@ export function parseWorkOrder(md: string): WorkOrder {
 }
 
 export type QueueRow = {
-  id: number; keyword: string; page_url: string; slug: string; version: number; mode: string
+  // keyword is null for an order made from a URL with no target keyword (Silna #512).
+  id: number; keyword: string | null; page_url: string; slug: string; version: number; mode: string
   blocked: boolean; blocker_count: number; deployed_at: string | null; deployed_url: string; status: string
   // The approval stamp (#1518): a person said this version may be published. Per version.
   approved_at?: string | null; approved_by?: string
   // The pull request this page was reported in (#1855, kg_pull_request), '' when none.
   pull_request_url?: string
+}
+
+// What a row is called: its keyword, else the page it changes. Never empty — the desktop
+// table makes it a Button's label, and a Button without one makes the engine refuse the
+// whole pane ("has not drawn in this pane", 2026-10-22).
+export function rowLabel(r: Pick<QueueRow, 'id' | 'keyword' | 'slug' | 'page_url'>): string {
+  return r.keyword || r.slug || r.page_url || `#${r.id}`
 }
 
 // The PR newly approved pages go onto (#1855): one open PR per batch in the client's repo.

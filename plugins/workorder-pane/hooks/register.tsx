@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 
 import type { Tab } from '../types'
-import { parseWorkOrder, unwrap } from './parse'
+import { parseWorkOrder, rowLabel, unwrap } from './parse'
 import type { OpenPullRequest, QueueRow, WorkOrder, Field } from './parse'
 
 const PANE = 'workorders'
@@ -256,9 +256,13 @@ export const register: Register = on => {
       await update($, view, () => 'queue')
     }
     const superseded = await read($, includeSuperseded)
+    // Every open asks the server again: a work order changes under the pane (a new version,
+    // an approval, a deploy report), so what an earlier open fetched is not shown as current.
+    queue = null
+    if (Number.isFinite(id)) orders.delete(id)
     if (await loadKey($)) {
-      if (queue === null || queueKey !== `queue:${superseded}`) void loadQueue($, superseded)
-      if (Number.isFinite(id) && !orders.has(id)) void loadOrder($, id)
+      void loadQueue($, superseded)
+      if (Number.isFinite(id)) void loadOrder($, id)
       if (Number.isFinite(id)) void prefetchPreview($, id, 'terminal')
     }
     const opened = await $.ui.open({ id: PANE, title: 'Work orders' })
@@ -332,7 +336,8 @@ export const register: Register = on => {
       const ready = rows.filter(r => !r.blocked).length
       const open = (row: QueueRow) => () => {
         if (row.blocked) { $.ui.toast(`#${row.id} is blocked (${row.blocker_count}); Keygrip is resolving it`); return }
-        if (!orders.has(row.id)) void loadOrder($, row.id)
+        orders.delete(row.id)
+        void loadOrder($, row.id)
         void prefetchPreview($, row.id, surface)
         void (async () => {
           await update($, selected, () => row.id)
@@ -354,7 +359,7 @@ export const register: Register = on => {
               <Text dimColor>{'id    ver  mode      state       keyword'}</Text>
               {rows.map(r => {
                 const flag = stateOf(r)
-                const label = `#${String(r.id).padEnd(4)} v${String(r.version).padEnd(3)} ${r.mode.padEnd(9)} ${flag.padEnd(11)} ${r.keyword}`
+                const label = `#${String(r.id).padEnd(4)} v${String(r.version).padEnd(3)} ${r.mode.padEnd(9)} ${flag.padEnd(11)} ${rowLabel(r)}`
                 return (
                   <Button
                     key={`row-${r.id}`}
@@ -386,7 +391,7 @@ export const register: Register = on => {
                     <Box width="13%"><Text dimColor={r.blocked}>{r.mode === 'net_new' ? 'net new' : r.mode}</Text></Box>
                     <Box width="16%"><Text color={r.blocked ? 'red' : r.deployed_at ? 'green' : r.approved_at ? 'cyan' : undefined} dimColor={r.blocked}>{flag}</Text></Box>
                     <Box flexGrow={1}>
-                      <Button key={`row-${r.id}`} plain dimColor={r.blocked} label={r.keyword} onPress={open(r)} />
+                      <Button key={`row-${r.id}`} plain dimColor={r.blocked} label={rowLabel(r)} onPress={open(r)} />
                     </Box>
                   </Box>
                 )
@@ -405,7 +410,7 @@ export const register: Register = on => {
 
     // ---- one order ----------------------------------------------------------
     const loaded = orders.get(id)
-    const back = <Button key="back" hotkey="b" onPress={() => update($, view, () => 'queue')}>Back to queue</Button>
+    const back = <Button key="back" hotkey="b" onPress={() => { queue = null; void loadQueue($, superseded); void update($, view, () => 'queue') }}>Back to queue</Button>
     if (!loaded) {
       if (inflight.has(`order:${id}`)) return <Box flexDirection="column" gap={1}><Text dimColor>Fetching work order #{id}…</Text>{back}</Box>
       return (
@@ -625,7 +630,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text bold>#{id} · {row?.keyword ?? wo.title}</Text>
+          <Text bold>#{id} · {row ? rowLabel(row) : wo.title}</Text>
           <Text dimColor wrap="truncate-end">{wo.title}{row ? ` · v${row.version} · ${row.mode} · ${stateOf(row)}${row.approved_at ? ` by ${row.approved_by || 'someone'}` : ''}` : ''}</Text>
         </Box>
         <Box gap={1} flexWrap="wrap">

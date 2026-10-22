@@ -11,7 +11,7 @@ client deploy loop in a pane instead of a wall of markdown in a tool row. Tracks
 ## What it draws
 
 **Queue.** One row per work order from `kg_workorders`: id, version, mode, state, keyword.
-Blocked rows are dimmed and refuse to open (the server refuses them too). Above the rows, the **open pull request** approved pages go into (#1855: one PR per batch in the client's own repo, reported by their agent with `kg_pull_request`); an approved page already in a PR reads `in PR`. `r` refresh,
+Blocked rows are dimmed and refuse to open (the server refuses them too). Above the rows, the **open pull request** approved pages go into (#1855: one PR per batch in the client's own repo, reported by their agent with `kg_pull_request`); an approved page already in a PR reads `in PR`. The queue is fetched from the server every time the pane opens and every time you go back to it (nothing from an earlier open is shown as current); a row with no keyword (an order made from a URL) is named by its slug. `r` refresh,
 `s` show/hide superseded versions.
 
 **Reader** (pick a row). Fetches `kg_fetch_workorder` once and splits the document on its fixed
