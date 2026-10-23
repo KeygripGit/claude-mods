@@ -11,7 +11,7 @@ client deploy loop in a pane instead of a wall of markdown in a tool row. Tracks
 ## What it draws
 
 **Queue.** One row per work order from `kg_workorders`: id, version, mode, state, keyword.
-Blocked rows are dimmed and refuse to open (the server refuses them too). Above the rows, the **open pull request** approved pages go into (#1855: one PR per batch in the client's own repo, reported by their agent with `kg_pull_request`); an approved page already in a PR reads `in PR`. The queue is fetched from the server every time the pane opens and every time you go back to it (nothing from an earlier open is shown as current); a row with no keyword (an order made from a URL) is named by its slug. `r` refresh,
+Blocked rows are dimmed and refuse to open (the server refuses them too). (The **open pull request** line above the rows and the `in PR` state draw only when the server sends `open_pull_request` / `pull_request_url`; the client server stopped sending them on 2026-10-23, when its PR-report tool came off, so on it a reported deploy is the only publish-side state.) The queue is fetched from the server every time the pane opens and every time you go back to it (nothing from an earlier open is shown as current); a row with no keyword (an order made from a URL) is named by its slug. `r` refresh,
 `s` show/hide superseded versions.
 
 **Reader** (pick a row). Fetches `kg_fetch_workorder(format="json")` once: the work order as
@@ -36,8 +36,9 @@ version — an edit makes a new, unapproved version — and it is what a publish
 Claude what to change, it calls `kg_fetch_body` → `kg_save_version` on the client server
 (configure that server in the session, see below), and the new version appears in the queue.
 
-At the bottom, a **Live URL** field whose submit calls `kg_report_deployed` with `target: manual`.
-It refuses an empty URL. Nothing else in the mod writes.
+Nothing else in the mod writes. There is no "report deployed" step (0.8.0, 2026-10-23: the
+client server's `kg_report_deployed` came off): Keygrip's daily check of the site records when a
+page goes live, and the queue's state column reads `deployed` once it has.
 
 ## Installing it (clients, and anyone outside the monorepo)
 
@@ -91,8 +92,6 @@ needs a Windows path. The copy that works today:
   "permissions": { "allow": [
     "mcp__keygrip-workorder__kg_workorders",
     "mcp__keygrip-workorder__kg_fetch_workorder",
-    "mcp__keygrip-workorder__kg_articles",
-    "mcp__keygrip-workorder__kg_article_status",
     "mcp__keygrip-workorder__kg_workorder_preview",
     "mcp__keygrip-workorder__kg_fetch_body"
   ] }
@@ -104,9 +103,9 @@ The `allow` list matters in **Auto** permission mode only for the *developer* pa
 the tools come from a hand-configured server: the pane's MCP calls come from a button, not
 a prompt, so the auto-mode classifier has nothing to match them against and refuses them
 ("the request that produced this action did not ask for one"). Allowed tools skip the classifier.
-The write tools (`kg_report_deployed`, `kg_workorder_approve`, `kg_save_version`,
-`kg_restore_version`) are deliberately not allowed; switch the session off Auto, or approve the
-prompt, when you report a deploy or approve from the pane, or ask Claude to edit a page.
+The write tools (`kg_workorder_approve`, `kg_save_version`, `kg_restore_version`) are
+deliberately not allowed; switch the session off Auto, or approve the prompt, when you approve
+from the pane or ask Claude to edit a page.
 
 Sync the Windows copy from WSL after a change:
 

@@ -107,7 +107,7 @@ function stateOf(r: QueueRow): string {
 function prHint(id: number): string {
   return openPr
     ? `Ask Claude to add #${id} to the open PR ${openPr.url} (branch ${openPr.branch}), not a new one.`
-    : `Ask Claude to open one PR for #${id} and report it; later approvals join it.`
+    : `Ask Claude to write #${id} into the site from its work order (a PR in the repo, or the CMS).`
 }
 
 // kg_workorder_approve, then the queue refetches so the row's state follows the server.
@@ -708,25 +708,6 @@ export const register: Register = on => {
               ? <Button key="unapprove" hotkey="a" onPress={() => { void setApproval($, id, false) }}>Withdraw approval</Button>
               : <Button key="approve" hotkey="a" variant="primary" onPress={() => { void setApproval($, id, true) }}>Approve for publishing</Button>}
           </Box>
-        </Box>
-        <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>
-          <Text dimColor>After publishing, report where the page went (anchors the before/after report):</Text>
-          <Input
-            key="deploy-url"
-            label="Live URL"
-            placeholder={row?.page_url ?? 'https://…'}
-            submitLabel="Report deployed"
-            onSubmit={value => {
-              const url = value.trim()
-              if (!url) { $.ui.toast('Type the live URL first'); return }
-              void (async () => {
-                const r = await callTool($, 'kg_report_deployed', { optimization_id: id, url, target: 'manual' })
-                $.ui.toast(r.isError ? `Report failed: ${unwrap(r.content).slice(0, 120)}` : `Reported #${id} deployed at ${url}`)
-                queue = null
-                await update($, tick, n => (n ?? 0) + 1)
-              })()
-            }}
-          />
         </Box>
       </Box>
     )
